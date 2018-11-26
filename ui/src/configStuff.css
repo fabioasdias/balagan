@@ -1,0 +1,24 @@
+.OneFile {
+    width: fit-content;
+    height: fit-content;
+    display:block;
+    padding: 2px;
+    margin: 2px;
+    border: solid;
+    border-color: lightskyblue;
+    border-width: thin;
+  }
+  
+  .WeightBlock {
+    border: solid;
+    border-color: lightskyblue;
+    border-width: thin;
+    padding: 5px;
+  }
+  
+  .configGeom{
+    width: fit-content;
+    height: fit-content;
+    padding: 5px;
+  }
+  

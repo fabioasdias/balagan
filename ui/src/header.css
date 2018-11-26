@@ -1,0 +1,39 @@
+.App-header {
+    height: fit-content;
+    width: 400px;
+    /* padding: 10px; */
+    /* border:solid;
+    border-width: thin;
+    border-color: lightskyblue; */
+    margin:5px;
+  }
+  
+.button{
+  margin: 0 auto;
+  padding: 2px;
+  /* width:24px;
+  height: 24px; */
+  vertical-align: center;
+}
+
+.checkboxes{
+  vertical-align: middle;
+}
+
+.dropboxes {
+  line-height: 1em;
+  margin: 5px;
+  margin-left: 10px;
+  margin-right: 50px;
+}
+
+.textBox {
+  margin-left: 10px;
+}
+
+.OneLine {
+  display:flex;
+  padding: 2px;
+  margin: 2px;
+}
+

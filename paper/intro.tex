@@ -1,0 +1,19 @@
+While the availability of georeferenced data is increasing, particularly for
+urban environments, extracting insight from this data is still a challenging
+task, especially when dealing with historical data to find patterns of temporal
+evolution. In this context, the data is usually gathered in different ways for
+each temporal step: variables are added, removed, or redefined; geographical
+regions changed; different variables measured using different regions.
+
+This problem is usually approached via an harmonisation process, where the data
+is interpolated to an arbitrary set of geographical regions and different
+variables are mapped into time series. This process is time-consuming and
+error-prone, and limited to periods where compatible variables are available,
+which can hinder a more comprehensive analysis.
+
+In this work we propose a method to discover patterns of temporal changes
+considering all the available data, in its original format, without
+harmonisations or interpolations. Since comparisons between different temporal
+step are not directly possible, this approach assumes a certain level of
+stability across time, similar regions are more likely to remain similar in the
+near temporal steps.
