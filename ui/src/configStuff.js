@@ -319,6 +319,14 @@ class ConfigNewStuff extends Component {
             }
             return(A);
         }
+        let setGeom=(A,g)=>{
+            for (let i=0;i<A.length;i++){
+                if (A[i].useGeom===''){
+                    A[i].useGeom=g;
+                }
+            }
+            return(A);
+        }
 
 
         let chgCall= (e)=>{ 
@@ -336,6 +344,10 @@ class ConfigNewStuff extends Component {
                     if (f.kind==='var'){
                         variables[f.index]['enabled']=!variables[f.index]['enabled'] 
                     }
+                    break;
+                case 'useGeom':
+                    variables[f.index][f.which]=e.target.value;
+                    variables=setGeom(variables,e.target.value);
                     break;
                 default:
                     if (f.kind==='geo'){

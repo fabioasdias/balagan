@@ -1,4 +1,5 @@
 import networkx as nx
+from networkx.drawing.nx_agraph import graphviz_layout
 import matplotlib.pylab as plt
 import numpy as np
 from scipy.spatial.distance import cdist,euclidean
@@ -125,7 +126,7 @@ def _updateHist(hist,minVal,maxVal,vals):
     th,_=np.histogram(vals,bins=NBINS,range=(minVal,maxVal))
     return(hist+th)
 
-def ComputeClustering(H,layer,sampleSize=50):
+def ComputeClustering(H,layer,sampleSize=50,varname=''):
     print('start CC')
     G=H.copy()
 
@@ -138,6 +139,7 @@ def ComputeClustering(H,layer,sampleSize=50):
         i2e[i]=e
         i+=1
 
+    S={}
 
     firstNode=list(G.nodes())[0]
     minVal=G.node[firstNode][layer]
@@ -165,12 +167,17 @@ def ComputeClustering(H,layer,sampleSize=50):
     # NG=len(G.nodes())
 
     level=0
+    roots=set([Find(G.node[x])['id'] for x in G.nodes()])
+    S[level]=[set(G.node[y]['members']) for y in roots]
+
     while (NE>0):
         print('-----------------\n\nlevel ',level)
         # nC=len(set([Find(G.node[n])['id'] for n in G.nodes()]))
         # print('#Clusters ',nC)
 
+
         level+=1
+
         H = []
         queued = dict()
         dv=[]
@@ -194,8 +201,8 @@ def ComputeClustering(H,layer,sampleSize=50):
             break
 
 
-        q25=np.percentile(dv,25)
-        TLH=0.02*len(H)
+        qT=np.percentile(dv,10)
+        TLH=0.005*len(H)
 
 
         print('Weights done',len(H))
@@ -205,10 +212,10 @@ def ComputeClustering(H,layer,sampleSize=50):
         while len(H)>0:
             el=heappop(H)
             x,y=el[2]
-            if ((el[0]>q25) and (len(to_merge)>(TLH))):
-                print('broke with',el[0],q25)
+            if ((el[0]>qT) and (len(to_merge)>(TLH))):
+                print('broke with',el[0],qT)
                 break
-            if (x['id'] in used) and (y['id']  in used):
+            if (x['id'] in used) or (y['id']  in used):
                 continue
             used[x['id']]=True
             used[y['id']]=True
@@ -232,9 +239,40 @@ def ComputeClustering(H,layer,sampleSize=50):
                     
             Union(x,y)
         print('merging done', removedEdges)
+        roots=set([Find(G.node[x])['id'] for x in G.nodes()])
+        # print(level,roots,len(roots),sum([len(G.node[y]['members']) for y in roots]))
+        S[level]=[set(G.node[y]['members']) for y in roots]
 
     # _plotGraph(G,layer)
+    
+    T=nx.DiGraph()
+    T.add_node((-1,-1))
+    T.node[(-1,-1)]['len']=len(G.nodes())
+    
+    for k in sorted(S.keys(),reverse=True):
+        for i in range(len(S[k])):
+            T.add_node((k,i))
+            T.node[(k,i)]['len']=len(S[k][i])
+            if (k+1) in S:
+                for j in range(len(S[k+1])):
+                    inter=(S[k][i]).intersection(S[k+1][j])
+                    if len(inter)>0:
+                        T.add_edge((k,i),(k+1,j))
+                        T[(k,i)][(k+1,j)]['inter']=len(inter)
+            else:
+                T.add_edge((k,i),(-1,-1))
+                T[(k,i)][(-1,-1)]['inter']=1
 
+    pos=graphviz_layout(T, prog='dot')
+    nx.draw(T,pos=pos,node_size=[T.node[n]['len']/10 for n in T.nodes()])#,width=[T[e[0]][e[1]]['inter']/10 for e in T.edges()])
+    plt.savefig('im_{0}.png'.format(varname),dpi=600)
+    plt.close()
+
+    nx.write_gpickle(T,'gr_{0}.gp'.format(varname))
+
+    #     plt.figure()
+    #     plt.hist(S[k],20)
+    # plt.show()
     return(G)
 
 if __name__=="__main__":

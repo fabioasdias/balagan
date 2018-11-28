@@ -21,21 +21,18 @@ import traceback
 import matplotlib.pylab as plt
 from shapely.geometry import Point
 from shapely.ops import cascaded_union
+from shapely import wkb
 WIGGLE=1e-5 #about half a street - used to close gaps (and densify the border)
 
 
 def plotPol(g,style='o-'):
-    if g.type == 'Polygon':
-        g=[g,]
-    elif g.type == 'MultiPolygon':
-        g=list(g)
-    x=[]
-    y=[]
-    for pol in list(g):            
+    for pol in _makeListPols(g):
+        x=[]
+        y=[]
         for p in pol.exterior.coords:                
             x.append(p[0])
             y.append(p[1])
-    plt.plot(x,y,style)
+        plt.plot(x,y,style)
 
 def findBorder(points):
     P=[Point(points[i,0],points[i,1]).buffer(1750*WIGGLE).simplify(0.1) for i in range(points.shape[0])]
@@ -44,31 +41,53 @@ def findBorder(points):
     # plt.plot(points[:,0],points[:,1],'.r')
     # plotPol(B)
     # plt.show()
-    x,y=B.exterior.coords.xy
-    return(np.array(list(zip(x,y))))
+    ret=[]
+    for pol in _makeListPols(B):
+        x,y=pol.exterior.coords.xy
+        curBorder=fixDensity(np.array(list(zip(x,y))))
+        ret.extend(curBorder)
+    return(np.array(ret))
 
 
-def densifyBorder(border):
+def fixDensity(border,nWiggles=100):
+    step=nWiggles*WIGGLE
     new_border=[]
     N=border.shape[0]
-    todo=[(i-1,i) for i in range(1,N)]+[(0,N-1),]
-    step=20*WIGGLE
-    for i,j in todo:
+    new_border.append(border[0,:])
+    i=0
+    j=i+1
+    
+    while True:
+        if (i>=(N-1)):
+            break
+
         p1=border[i,:]
-        p2=border[j,:]
-        v=p2-p1
-        totalD=norm(v)
+        while True:
+            p2=border[j,:]
+            v=p2-p1
+            totalD=norm(v)
+            if totalD < step:
+                if (j>=(N-1)):
+                    break
+                j+=1
+            else:
+                break
+                
         if totalD>0:
             v=v/totalD #unitary vector
             cP=p1
-            for _ in range(int(np.floor(totalD/step))):
-                cP=cP+v*step
+            nSteps=int(np.floor(totalD/step))
+            actualStep=totalD/nSteps
+            for _ in range(nSteps):
+                cP=cP+v*actualStep
                 new_border.append(cP)
+        i=j
+        j=i+1
 
     new_border=np.array(new_border)
 
-    border=np.concatenate((border,new_border),axis=0)
-    return(border)
+    # border=np.concatenate((border,new_border),axis=0)
+    return(new_border)
 
 
 
@@ -115,6 +134,12 @@ def _getAvVG():
     conn.commit()
     connPool.putconn(conn)
     return(ret)
+def _makeListPols(g):
+    if g.type == 'Polygon':
+        g=[g,]
+    elif g.type == 'MultiPolygon':
+        g=list(g)
+    return(g)
 
 
 def _createHier(VarID):
@@ -125,29 +150,29 @@ def _createHier(VarID):
     cur.execute(sql.SQL("SELECT GeoID from AvVars WHERE VarID=%s"),[VarID,])
     GeoID=cur.fetchone()[0]
 
-    cur.execute(sql.SQL("SELECT F.FormID,ST_X(F.centr),ST_Y(F.centr),V.normVal FROM Forms as F, Variables as V WHERE (F.GeoID=%s) AND (V.VarID=%s) AND (F.FormID = V.FormID)"),[GeoID,VarID])
-    points=np.zeros((cur.rowcount,2))
+    cur.execute(sql.SQL("SELECT F.FormID,ST_X(F.centr),ST_Y(F.centr),V.normVal,F.geom FROM Forms as F, Variables as V WHERE (F.GeoID=%s) AND (V.VarID=%s) AND (F.FormID = V.FormID)"),[GeoID,VarID])
+    points=[]#np.zeros((cur.rowcount,2))
     ind2ID={}
     G=nx.Graph()
     ind=0
     for row in cur:
         n=row[0]
-        ind2ID[ind]=n
         G.add_node(n)
         G.node[n]['val']=row[3]
         G.node[n]['x']=row[1]
         G.node[n]['y']=row[2]
-        points[ind,0]=row[1]
-        points[ind,1]=row[2]
-        ind=ind+1
-    
-    border=findBorder(points)
-    border=densifyBorder(border)
+        for pol in _makeListPols(wkb.loads(row[4], hex=True)):            
+            # plotPol(pol)
+            x,y=pol.exterior.coords.xy
+            curPoints=fixDensity(np.array(list(zip(x,y))))
+            points.extend(curPoints)
+            for _ in range(curPoints.shape[0]):
+                ind2ID[ind]=n        
+                ind=ind+1
+    points=np.array(points)
 
-    # plt.figure()
-    # plt.plot(points[:,0],points[:,1],'.b')
-    # plt.plot(border[:,0],border[:,1],'xr')
-    # plt.show()
+
+    border=findBorder(points)
     maxValid=points.shape[0]
     points=np.concatenate((points,border),axis=0)
 
@@ -157,51 +182,29 @@ def _createHier(VarID):
     for e in D.ridge_points:
         if (e[0]<maxValid) and (e[1]<maxValid):
             G.add_edge(ind2ID[e[0]],ind2ID[e[1]])
-    # for s in D.simplices:
-    #     G.add_edge(ind2ID[s[0]],ind2ID[s[1]])
-    #     G.add_edge(ind2ID[s[0]],ind2ID[s[2]])
-    #     G.add_edge(ind2ID[s[2]],ind2ID[s[1]])
-
-    # plt.triplot(points[:,0], points[:,1], D.simplices)
-    # plt.plot(points[:,0], points[:,1], 'o')
-
-    # plt.figure()
-    # pos={}
-    # for n in G.nodes():
-    #     pos[n]=[G.node[n]['x'],G.node[n]['y']]
-    # print(nx.number_connected_components(G))    
-    # for gg in nx.connected_components(G):
-    #     print(len(gg))
-    #     if (len(gg)>10):
-    #         ns=5
-    #         c='blue'
-    #     else:
-    #         ns=20
-    #         c='red'
-    #     nx.draw(G.subgraph(gg),pos=pos,node_size=ns,node_color=c)
-    # plt.show()
 
     print('Nodes {0}, edges {1}'.format(len(G.nodes()),len(G.edges())))
-    H=ComputeClustering(G, layer='val')
+    H=ComputeClustering(G, layer='val',varname='{0}'.format(VarID))
 
     status=False
     levelMax=0
     for e in H.edges():
-        levelMax=max((levelMax,H[e[0]][e[1]]['level']))
+        if ('level' in H[e[0]][e[1]]):
+            levelMax=max((levelMax,H[e[0]][e[1]]['level']))
 
 
-    NG=nx.Graph()
+    # NG=nx.Graph()
     
-    cur.execute(sql.SQL("SELECT F.FormID, F.OriginalID FROM Forms as F WHERE (F.GeoID=%s);"),[GeoID])
-    conversion={row[0]:row[1] for row in cur.fetchall()}
+    # cur.execute(sql.SQL("SELECT F.FormID, F.OriginalID FROM Forms as F WHERE (F.GeoID=%s);"),[GeoID])
+    # conversion={row[0]:row[1] for row in cur.fetchall()}
 
-    NG.add_nodes_from([conversion[n] for n in H.nodes()])
-    NG.add_edges_from([(conversion[n1],conversion[n2]) for (n1,n2) in H.edges()])
-    for e in H.edges():
-        NG[conversion[e[0]]][conversion[e[1]]]['level']=H[e[0]][e[1]]['level']/levelMax
+    # NG.add_nodes_from([conversion[n] for n in H.nodes()])
+    # NG.add_edges_from([(conversion[n1],conversion[n2]) for (n1,n2) in H.edges()])
+    # for e in H.edges():
+    #     NG[conversion[e[0]]][conversion[e[1]]]['level']=H[e[0]][e[1]]['level']/levelMax
 
-    with open('g{0}.json'.format(VarID),'w') as fout:
-        json.dump(json_graph.node_link_data(NG),fout)
+    # with open('g{0}.json'.format(VarID),'w') as fout:
+    #     json.dump(json_graph.node_link_data(NG),fout)
 
 
 
@@ -209,7 +212,8 @@ def _createHier(VarID):
         cur.execute(sql.SQL("INSERT INTO AvHier(VarID,maxLevel) VALUES (%s,%s) RETURNING HierID;"),[VarID,levelMax])
         HierID=cur.fetchone()[0]
         for e in H.edges():
-            cur.execute(sql.SQL("INSERT INTO Edges(HierID,Node1,Node2,level,scale) VALUES (%s,%s,%s,%s,0);"),[HierID,e[0],e[1],H[e[0]][e[1]]['level']])
+            if ('level' in H[e[0]][e[1]]):
+                cur.execute(sql.SQL("INSERT INTO Edges(HierID,Node1,Node2,level,scale) VALUES (%s,%s,%s,%s,0);"),[HierID,e[0],e[1],H[e[0]][e[1]]['level']])
         conn.commit()
         status=True
     except:
@@ -258,11 +262,31 @@ class server(object):
     @cherrypy.tools.json_in()
     @cherrypy.tools.json_out()
     @cherrypy.config(**{'tools.cors.on': True})        
-    def moveTemp(self):
+    def SimplifiedGeojson(self):
         input_json = cherrypy.request.json
         print(input_json)
+
+        conn = connPool.getconn()
+        cur = conn.cursor()
+
+        bbox=input_json['viewbox']
+        cur.execute(sql.SQL('SELECT geoid from AvGeo WHERE ST_Intersects(geom,ST_MakeEnvelope(%s, %s, %s, %s, 4326));'),[bbox['_sw']['lng'],bbox['_sw']['lat'],bbox['_ne']['lng'],bbox['_ne']['lat']])
+        if (cur.rowcount >0):
+            print(cur.fetchall())
+        cur.close()
+        conn.commit()        
+        return({})
+
+    @cherrypy.expose
+    @cherrypy.tools.gzip()
+    @cherrypy.tools.json_in()
+    @cherrypy.tools.json_out()
+    @cherrypy.config(**{'tools.cors.on': True})        
+    def moveTemp(self):
+        input_json = cherrypy.request.json
+        # print(input_json)
         files=input_json['newFiles']
-        uuid=input_json['id']
+        # uuid=input_json['id']
 
         conn = connPool.getconn()
         cur = conn.cursor()
@@ -300,8 +324,14 @@ class server(object):
                                 .format(sql.Identifier(g['indexField']),
                                         sql.Identifier(g['field']),
                                         sql.Identifier(g['table'])),[GeoID,])
-                        # FormsToEdges.extend([X[0] for X in cur.fetchall()])
-                        # cur.execute(sql.SQL('UPDATE AvGeo SET geom=t.geom FROM (SELECT ST_Buffer(ST_Union(ST_ConvexHull(F.geom)),0.01) as geom from public.forms as F where F.GeoID=%s) as t where GeoID=%s'),[GeoID,GeoID])
+                        cur.execute(
+                            sql.SQL(
+                                'INSERT INTO SimpForm(GeoID,OriginalID,geom,centr) SELECT %s,{0},ST_Multi(ST_SimplifyPreserveTopology(ST_Buffer(ST_SimplifyPreserveTopology(ST_MakeValid({1}), 0.5),0.0001),0.75)),ST_Centroid({1}) FROM tempdata.{2} RETURNING FormID;')
+                                .format(sql.Identifier(g['indexField']),
+                                        sql.Identifier(g['field']),
+                                        sql.Identifier(g['table'])),[GeoID,])
+                        conn.commit()
+                        cur.execute(sql.SQL('UPDATE AvGeo SET geom=t.geom FROM (SELECT ST_Multi(ST_SetSRID(ST_Extent(F.geom),4326)) as geom from public.SimpForm as F where F.GeoID=%s) as t where GeoID=%s'),[GeoID,GeoID])                        
                         conn.commit()
                     except:
                         conn.rollback()
@@ -390,6 +420,7 @@ class server(object):
         cherrypy.response.headers["Access-Control-Allow-Origin"] = "*"
         ret=_getAvVG()
         return(ret)
+
 
     @cherrypy.expose
     @cherrypy.tools.gzip()
@@ -655,8 +686,8 @@ if __name__ == '__main__':
 
 
     connPool = ThreadedConnectionPool(1, 10, "dbname=balagan user=postgres password=nothing" )
-    _createHier(1)
-    exit()
+    # _createHier(1)
+    # exit()
 
     cherrypy.server.max_request_body_size = 0
     cherrypy.server.socket_host = '0.0.0.0'

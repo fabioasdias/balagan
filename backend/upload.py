@@ -69,7 +69,7 @@ def processUploadFolder(tempDir):
             ret['status'][basename(shp)]=thisTable
         except:
             raise
-            pass
+            # pass
         nTables+=1
 
     for C in csvs:

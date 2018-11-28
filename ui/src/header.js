@@ -5,7 +5,7 @@ import FileUploadProgress  from 'react-fileupload-progress';
 import {getURL, getData} from './urls';
 import ConfigNewStuff from './configStuff';
 import ConfigHier from './hier';
-import ConfigWeights from './configWeights';
+// import ConfigWeights from './configWeights';
 
 class Header extends Component {
     constructor(props){
@@ -16,7 +16,7 @@ class Header extends Component {
     render(){
         return(
             <div key='header' className="App-header">
-                <ConfigWeights key='configW'/>
+                {/* <ConfigWeights key='configW'/> */}
                 
                 <button key='AddFile' className="button" 
                     onClick={(e) => {this.setState({showPicker:!this.state.showPicker,

@@ -35,12 +35,26 @@ CREATE TABLE IF NOT EXISTS Forms (
     GeoID integer REFERENCES AvGeo(GeoID) ON DELETE CASCADE,
     centr geometry(POINT,4326),
     OriginalID text,
-    geom geometry
+    geom geometry(MULTIPOLYGON,4326)
 );
 CREATE INDEX FormsIndex ON Forms USING GIST (geom);
 CREATE INDEX centrIndex ON Forms USING GIST (centr);
 CREATE INDEX origIndex ON Forms(OriginalID);
 CREATE INDEX geoIndex ON Forms(GeoID);
+
+CREATE TABLE IF NOT EXISTS SimpForm(
+    FormID serial PRIMARY KEY,
+    GeoID integer REFERENCES AvGeo(GeoID) ON DELETE CASCADE,
+    centr geometry(POINT,4326),
+    OriginalID text,
+    geom geometry(MULTIPOLYGON,4326)
+);
+CREATE INDEX SimpFormIndex ON SimpForm USING GIST (geom);
+CREATE INDEX ScentrIndex ON SimpForm USING GIST (centr);
+CREATE INDEX SorigIndex ON SimpForm(OriginalID);
+CREATE INDEX SgeoIndex ON SimpForm(GeoID);
+
+
 
 CREATE TABLE IF NOT EXISTS Variables (
     VarID integer REFERENCES AvVars(VarID) ON DELETE CASCADE,
@@ -64,18 +78,6 @@ CREATE TABLE IF NOT EXISTS Edges (
 );
 
 CREATE INDEX hierIndex ON Edges(HierID);
-
-CREATE TABLE IF NOT EXISTS Borders (
-   BorderID serial PRIMARY KEY,
-   geom geometry(MULTILINESTRING,4326)
-);
-CREATE INDEX BordersIndex ON Borders USING GIST (geom);
-
-CREATE TABLE IF NOT EXISTS BperE (
-    EdgeID integer REFERENCES Edges(EdgeID) ON DELETE CASCADE,
-    BorderID integer REFERENCES Borders(BorderID) ON DELETE CASCADE,
-    PRIMARY KEY (EdgeID,BorderID)
-);
   
 CREATE TABLE IF NOT EXISTS uploadlog (
     tableName text PRIMARY KEY,

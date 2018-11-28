@@ -40,7 +40,11 @@ export const getURL  = {
     },
     AvailableHiers: () =>{
         return(baseURL()+'getAvailableHiers');
+    },
+    SimplifiedGeojson: () =>{
+        return(baseURL()+'SimplifiedGeojson');
     }
+
 };
 
 export const getData = (url,actionThen) => {
