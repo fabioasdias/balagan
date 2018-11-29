@@ -147,44 +147,54 @@ def _createHier(VarID):
     conn = connPool.getconn()
     cur = conn.cursor()
 
-    cur.execute(sql.SQL("SELECT GeoID from AvVars WHERE VarID=%s"),[VarID,])
-    GeoID=cur.fetchone()[0]
+    cur.execute(sql.SQL("SELECT GeoID,name from AvVars WHERE VarID=%s"),[VarID,])
+    res=cur.fetchone()
+    GeoID=res[0]
+    varname=res[1]
+    cacheName='geoid_{0}.gp'.format(GeoID)
 
-    cur.execute(sql.SQL("SELECT F.FormID,ST_X(F.centr),ST_Y(F.centr),V.normVal,F.geom FROM Forms as F, Variables as V WHERE (F.GeoID=%s) AND (V.VarID=%s) AND (F.FormID = V.FormID)"),[GeoID,VarID])
-    points=[]#np.zeros((cur.rowcount,2))
-    ind2ID={}
-    G=nx.Graph()
-    ind=0
-    for row in cur:
-        n=row[0]
-        G.add_node(n)
-        G.node[n]['val']=row[3]
-        G.node[n]['x']=row[1]
-        G.node[n]['y']=row[2]
-        for pol in _makeListPols(wkb.loads(row[4], hex=True)):            
-            # plotPol(pol)
-            x,y=pol.exterior.coords.xy
-            curPoints=fixDensity(np.array(list(zip(x,y))))
-            points.extend(curPoints)
-            for _ in range(curPoints.shape[0]):
-                ind2ID[ind]=n        
-                ind=ind+1
-    points=np.array(points)
+    if (exists(cacheName)):
+        G=nx.read_gpickle(cacheName)
+        cur.execute(sql.SQL("SELECT normVal, FormID FROM Variables WHERE (VarID=%s);"),[VarID,])
+        for row in cur:
+            G.node[row[1]]['val']=row[0]
+    else:
+        cur.execute(sql.SQL("SELECT F.FormID,ST_X(F.centr),ST_Y(F.centr),V.normVal,F.geom FROM Forms as F, Variables as V WHERE (F.GeoID=%s) AND (V.VarID=%s) AND (F.FormID = V.FormID)"),[GeoID,VarID])
+        points=[]#np.zeros((cur.rowcount,2))
+        ind2ID={}
+        G=nx.Graph()
+        ind=0
+        for row in cur:
+            n=row[0]
+            G.add_node(n)
+            G.node[n]['val']=row[3]
+            G.node[n]['x']=row[1]
+            G.node[n]['y']=row[2]
+            for pol in _makeListPols(wkb.loads(row[4], hex=True)):            
+                # plotPol(pol)
+                x,y=pol.exterior.coords.xy
+                curPoints=fixDensity(np.array(list(zip(x,y))))
+                points.extend(curPoints)
+                for _ in range(curPoints.shape[0]):
+                    ind2ID[ind]=n        
+                    ind=ind+1
+        points=np.array(points)
 
 
-    border=findBorder(points)
-    maxValid=points.shape[0]
-    points=np.concatenate((points,border),axis=0)
+        border=findBorder(points)
+        maxValid=points.shape[0]
+        points=np.concatenate((points,border),axis=0)
 
-    print('start Voronoi')
-    D=Voronoi(points,qhull_options="E0")
-    print('done Voronoi')
-    for e in D.ridge_points:
-        if (e[0]<maxValid) and (e[1]<maxValid):
-            G.add_edge(ind2ID[e[0]],ind2ID[e[1]])
+        print('start Voronoi')
+        D=Voronoi(points,qhull_options="E0")
+        print('done Voronoi')
+        for e in D.ridge_points:
+            if (e[0]<maxValid) and (e[1]<maxValid):
+                G.add_edge(ind2ID[e[0]],ind2ID[e[1]])
+        nx.write_gpickle(G,cacheName)
 
     print('Nodes {0}, edges {1}'.format(len(G.nodes()),len(G.edges())))
-    H=ComputeClustering(G, layer='val',varname='{0}'.format(VarID))
+    H=ComputeClustering(G, layer='val',varname=varname)
 
     status=False
     levelMax=0

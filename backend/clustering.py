@@ -201,8 +201,8 @@ def ComputeClustering(H,layer,sampleSize=50,varname=''):
             break
 
 
-        qT=np.percentile(dv,10)
-        TLH=0.005*len(H)
+        qT=np.percentile(dv,25)
+        TLH=0.05*len(H)
 
 
         print('Weights done',len(H))
@@ -263,10 +263,10 @@ def ComputeClustering(H,layer,sampleSize=50,varname=''):
                 T.add_edge((k,i),(-1,-1))
                 T[(k,i)][(-1,-1)]['inter']=1
 
-    pos=graphviz_layout(T, prog='dot')
-    nx.draw(T,pos=pos,node_size=[T.node[n]['len']/10 for n in T.nodes()])#,width=[T[e[0]][e[1]]['inter']/10 for e in T.edges()])
-    plt.savefig('im_{0}.png'.format(varname),dpi=600)
-    plt.close()
+    # pos=graphviz_layout(T, prog='dot')
+    # nx.draw(T,pos=pos,node_size=[T.node[n]['len']/10 for n in T.nodes()])#,width=[T[e[0]][e[1]]['inter']/10 for e in T.edges()])
+    # plt.savefig('im_{0}.png'.format(varname),dpi=600)
+    # plt.close()
 
     nx.write_gpickle(T,'gr_{0}.gp'.format(varname))
 
