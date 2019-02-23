@@ -49,7 +49,7 @@ def findBorder(points):
     return(np.array(ret))
 
 
-def fixDensity(border,nWiggles=100):
+def fixDensity(border,nWiggles=500):
     step=nWiggles*WIGGLE
     new_border=[]
     N=border.shape[0]
@@ -77,10 +77,11 @@ def fixDensity(border,nWiggles=100):
             v=v/totalD #unitary vector
             cP=p1
             nSteps=int(np.floor(totalD/step))
-            actualStep=totalD/nSteps
-            for _ in range(nSteps):
-                cP=cP+v*actualStep
-                new_border.append(cP)
+            if (nSteps>0):
+                actualStep=totalD/nSteps
+                for _ in range(nSteps):
+                    cP=cP+v*actualStep
+                    new_border.append(cP)
         i=j
         j=i+1
 
@@ -143,7 +144,7 @@ def _makeListPols(g):
 
 
 def _createHier(VarID):
-    print('VARID',VarID)
+    print('Create Hier VARID',VarID)
     conn = connPool.getconn()
     cur = conn.cursor()
 
@@ -151,15 +152,12 @@ def _createHier(VarID):
     res=cur.fetchone()
     GeoID=res[0]
     varname=res[1]
+    print('GeoID',GeoID,varname)
     cacheName='geoid_{0}.gp'.format(GeoID)
 
-    if (exists(cacheName)):
-        G=nx.read_gpickle(cacheName)
-        cur.execute(sql.SQL("SELECT normVal, FormID FROM Variables WHERE (VarID=%s);"),[VarID,])
-        for row in cur:
-            G.node[row[1]]['val']=row[0]
-    else:
-        cur.execute(sql.SQL("SELECT F.FormID,ST_X(F.centr),ST_Y(F.centr),V.normVal,F.geom FROM Forms as F, Variables as V WHERE (F.GeoID=%s) AND (V.VarID=%s) AND (F.FormID = V.FormID)"),[GeoID,VarID])
+    if not exists(cacheName):
+        print('doing the graph')
+        cur.execute(sql.SQL("SELECT F.FormID, ST_X(F.centr), ST_Y(F.centr), F.geom FROM Forms as F WHERE (F.GeoID=%s)"),[GeoID,])
         points=[]#np.zeros((cur.rowcount,2))
         ind2ID={}
         G=nx.Graph()
@@ -167,10 +165,9 @@ def _createHier(VarID):
         for row in cur:
             n=row[0]
             G.add_node(n)
-            G.node[n]['val']=row[3]
             G.node[n]['x']=row[1]
             G.node[n]['y']=row[2]
-            for pol in _makeListPols(wkb.loads(row[4], hex=True)):            
+            for pol in _makeListPols(wkb.loads(row[3], hex=True)):            
                 # plotPol(pol)
                 x,y=pol.exterior.coords.xy
                 curPoints=fixDensity(np.array(list(zip(x,y))))
@@ -180,22 +177,42 @@ def _createHier(VarID):
                     ind=ind+1
         points=np.array(points)
 
-
         border=findBorder(points)
         maxValid=points.shape[0]
         points=np.concatenate((points,border),axis=0)
 
-        print('start Voronoi')
+        print('start Voronoi', points.shape)
         D=Voronoi(points,qhull_options="E0")
         print('done Voronoi')
         for e in D.ridge_points:
             if (e[0]<maxValid) and (e[1]<maxValid):
                 G.add_edge(ind2ID[e[0]],ind2ID[e[1]])
+        print('number of connected components ',nx.number_connected_components(G))
         nx.write_gpickle(G,cacheName)
+    
+    print('assigning values',cacheName)
+    G=nx.read_gpickle(cacheName)
+
+    pos={}
+    for n in G:
+        pos[n]=[G.node[n]['x'],G.node[n]['y']]
+    for H in nx.connected_component_subgraphs(G):
+        if (len(list(H.nodes()))>10):
+            nx.draw(H,pos=pos,node_size=2,node_color='green')
+        else:
+            nx.draw(H,pos=pos,node_size=10,node_color='red')
+    plt.show()
+    exit()
+
+
+    cur.execute(sql.SQL("SELECT normVal, FormID FROM Variables WHERE (VarID=%s);"),[VarID,])
+    for row in cur:
+        G.node[row[1]]['val']=row[0]
+
 
     print('Nodes {0}, edges {1}'.format(len(G.nodes()),len(G.edges())))
     H=ComputeClustering(G, layer='val',varname=varname)
-
+    print('clustering done')
     status=False
     levelMax=0
     for e in H.edges():
@@ -203,18 +220,21 @@ def _createHier(VarID):
             levelMax=max((levelMax,H[e[0]][e[1]]['level']))
 
 
-    # NG=nx.Graph()
-    
-    # cur.execute(sql.SQL("SELECT F.FormID, F.OriginalID FROM Forms as F WHERE (F.GeoID=%s);"),[GeoID])
-    # conversion={row[0]:row[1] for row in cur.fetchall()}
+    #fluxland
+    if (True):
+        print('saving', VarID, varname)
+        NG=nx.Graph()
+        
+        cur.execute(sql.SQL("SELECT F.FormID, F.OriginalID FROM Forms as F WHERE (F.GeoID=%s);"),[GeoID])
+        conversion={row[0]:row[1] for row in cur.fetchall()}
 
-    # NG.add_nodes_from([conversion[n] for n in H.nodes()])
-    # NG.add_edges_from([(conversion[n1],conversion[n2]) for (n1,n2) in H.edges()])
-    # for e in H.edges():
-    #     NG[conversion[e[0]]][conversion[e[1]]]['level']=H[e[0]][e[1]]['level']/levelMax
+        NG.add_nodes_from([conversion[n] for n in H.nodes()])
+        NG.add_edges_from([(conversion[n1],conversion[n2]) for (n1,n2) in H.edges()])
+        for e in H.edges():
+            NG[conversion[e[0]]][conversion[e[1]]]['level']=H[e[0]][e[1]]['level']/levelMax
 
-    # with open('g{0}.json'.format(VarID),'w') as fout:
-    #     json.dump(json_graph.node_link_data(NG),fout)
+        with open('g{0}.json'.format(VarID),'w') as fout:
+            json.dump(json_graph.node_link_data(NG),fout)
 
 
 

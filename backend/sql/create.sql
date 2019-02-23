@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS AvVars (
     description text
 );
 CREATE INDEX geoAvVars ON AvVars(GeoID);
+CREATE INDEX avVarsID on AvVars(VarID);
 
 CREATE TABLE IF NOT EXISTS AvHier (
     HierID serial PRIMARY KEY,

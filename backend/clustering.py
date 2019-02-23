@@ -82,7 +82,7 @@ def _plotGraph(G,layer):
     plt.hist(eW,500)
     plt.show()
 
-def _clusterDistance(G,C1,C2,layer,sampleSize):
+def _clusterDistance(G,C1,C2,layer):
     h1=C1['histogram']
     s1=np.sum(h1)
     if (s1>0):
@@ -101,18 +101,21 @@ def Union(x, y):
      if xRoot['rank'] > yRoot['rank']:
          xRoot['members'].extend(yRoot['members'])
          xRoot['histogram']=xRoot['histogram']+yRoot['histogram']
-         yRoot['members']=[]
+         del(yRoot['histogram'])
+         del(yRoot['members'])
          yRoot['parent'] = xRoot
      elif xRoot['rank'] < yRoot['rank']:
          yRoot['members'].extend(xRoot['members'])
          yRoot['histogram']=xRoot['histogram']+yRoot['histogram']
-         xRoot['members']=[]         
+         del(xRoot['histogram'])
+         del(xRoot['members'])
          xRoot['parent'] = yRoot
      elif xRoot['id'] != yRoot['id']: # Unless x and y are already in same set, merge them
          yRoot['parent'] = xRoot
          xRoot['members'].extend(yRoot['members'])
          xRoot['histogram']=xRoot['histogram']+yRoot['histogram']
-         yRoot['members']=[]         
+         del(yRoot['histogram'])
+         del(yRoot['members'])
          xRoot['rank'] = xRoot['rank'] + 1
 
 def Find(x):
@@ -126,7 +129,7 @@ def _updateHist(hist,minVal,maxVal,vals):
     th,_=np.histogram(vals,bins=NBINS,range=(minVal,maxVal))
     return(hist+th)
 
-def ComputeClustering(H,layer,sampleSize=50,varname=''):
+def ComputeClustering(H,layer,varname=''):
     print('start CC')
     G=H.copy()
 
@@ -175,7 +178,6 @@ def ComputeClustering(H,layer,sampleSize=50,varname=''):
         # nC=len(set([Find(G.node[n])['id'] for n in G.nodes()]))
         # print('#Clusters ',nC)
 
-
         level+=1
 
         H = []
@@ -194,15 +196,14 @@ def ComputeClustering(H,layer,sampleSize=50,varname=''):
                 K=(min((xid,yid)),max((xid,yid)))
                 if K not in queued:
                     queued[K]=True
-                    cD=_clusterDistance(G, x, y, layer=layer,sampleSize=sampleSize)
+                    cD=_clusterDistance(G, x, y, layer=layer)
                     heappush(H,(cD,K,(x,y)))
                     dv.append(cD)
         if (not dv):
             break
 
-
-        qT=np.percentile(dv,25)
-        TLH=0.05*len(H)
+        quantileThreshold=np.percentile(dv,25)
+        MergeAtLeast=0.20*len(H)
 
 
         print('Weights done',len(H))
@@ -212,8 +213,8 @@ def ComputeClustering(H,layer,sampleSize=50,varname=''):
         while len(H)>0:
             el=heappop(H)
             x,y=el[2]
-            if ((el[0]>qT) and (len(to_merge)>(TLH))):
-                print('broke with',el[0],qT)
+            if ((el[0]>quantileThreshold) and (len(to_merge)>(MergeAtLeast))):
+                print('broke with',el[0],quantileThreshold)
                 break
             if (x['id'] in used) or (y['id']  in used):
                 continue
@@ -224,12 +225,15 @@ def ComputeClustering(H,layer,sampleSize=50,varname=''):
         print('merge selection done: {0} to do, {1} used '.format(len(to_merge),len(used)))
 
         removedEdges=0
+        print('to_merge',len(to_merge))
         for (x,y) in to_merge:
             x=Find(x)
             y=Find(y)
             XE=set([e2i[e] for e in list(G.edges(x['members']))])
             YE=set([e2i[e] for e in list(G.edges(y['members']))])
             rE=list(XE.intersection(YE))
+            if (len(XE)==len(rE)) or (len(YE)==len(rE)):
+                print('XE {0} YE {1} rE {2}'.format(len(XE),len(YE),len(rE)))
             removedEdges+=len(rE)
             for ee in list(rE):
                 e=i2e[ee]
@@ -239,36 +243,36 @@ def ComputeClustering(H,layer,sampleSize=50,varname=''):
                     
             Union(x,y)
         print('merging done', removedEdges)
-        roots=set([Find(G.node[x])['id'] for x in G.nodes()])
-        # print(level,roots,len(roots),sum([len(G.node[y]['members']) for y in roots]))
-        S[level]=[set(G.node[y]['members']) for y in roots]
+        # roots=set([Find(G.node[x])['id'] for x in G.nodes()])
+        # # print(level,roots,len(roots),sum([len(G.node[y]['members']) for y in roots]))
+        # S[level]=[set(G.node[y]['members']) for y in roots]
 
     # _plotGraph(G,layer)
     
-    T=nx.DiGraph()
-    T.add_node((-1,-1))
-    T.node[(-1,-1)]['len']=len(G.nodes())
+    # T=nx.DiGraph()
+    # T.add_node((-1,-1))
+    # T.node[(-1,-1)]['len']=len(G.nodes())
     
-    for k in sorted(S.keys(),reverse=True):
-        for i in range(len(S[k])):
-            T.add_node((k,i))
-            T.node[(k,i)]['len']=len(S[k][i])
-            if (k+1) in S:
-                for j in range(len(S[k+1])):
-                    inter=(S[k][i]).intersection(S[k+1][j])
-                    if len(inter)>0:
-                        T.add_edge((k,i),(k+1,j))
-                        T[(k,i)][(k+1,j)]['inter']=len(inter)
-            else:
-                T.add_edge((k,i),(-1,-1))
-                T[(k,i)][(-1,-1)]['inter']=1
+    # for k in sorted(S.keys(),reverse=True):
+    #     for i in range(len(S[k])):
+    #         T.add_node((k,i))
+    #         T.node[(k,i)]['len']=len(S[k][i])
+    #         if (k+1) in S:
+    #             for j in range(len(S[k+1])):
+    #                 inter=(S[k][i]).intersection(S[k+1][j])
+    #                 if len(inter)>0:
+    #                     T.add_edge((k,i),(k+1,j))
+    #                     T[(k,i)][(k+1,j)]['inter']=len(inter)
+    #         else:
+    #             T.add_edge((k,i),(-1,-1))
+    #             T[(k,i)][(-1,-1)]['inter']=1
 
-    # pos=graphviz_layout(T, prog='dot')
-    # nx.draw(T,pos=pos,node_size=[T.node[n]['len']/10 for n in T.nodes()])#,width=[T[e[0]][e[1]]['inter']/10 for e in T.edges()])
-    # plt.savefig('im_{0}.png'.format(varname),dpi=600)
-    # plt.close()
+    # # pos=graphviz_layout(T, prog='dot')
+    # # nx.draw(T,pos=pos,node_size=[T.node[n]['len']/10 for n in T.nodes()])#,width=[T[e[0]][e[1]]['inter']/10 for e in T.edges()])
+    # # plt.savefig('im_{0}.png'.format(varname),dpi=600)
+    # # plt.close()
 
-    nx.write_gpickle(T,'gr_{0}.gp'.format(varname))
+    # nx.write_gpickle(T,'gr_{0}.gp'.format(varname))
 
     #     plt.figure()
     #     plt.hist(S[k],20)
