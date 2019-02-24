@@ -4,28 +4,13 @@ import matplotlib.pylab as plt
 import numpy as np
 from scipy.spatial.distance import cdist,euclidean
 from scipy.ndimage import gaussian_filter
+from scipy.stats import wasserstein_distance
 from heapq import heappop, heappush,heapify
-from random import sample
+from random import sample, random
 from matplotlib import cm
-from pyemd import emd
 import matplotlib.pylab as plt
 
 NBINS=100
-MD=np.eye(NBINS+4)
-# plt.figure()
-# plt.imshow(MD)
-# plt.colorbar()
-MD=gaussian_filter(MD,10)
-MD=(MD[2:-2,2:-2]).copy(order='C')
-# print(MD.shape,NBINS)
-# plt.figure()
-# plt.imshow(MD)
-# plt.colorbar()
-# plt.show()
-#https://stackoverflow.com/questions/4211209/remove-all-the-elements-that-occur-in-one-list-from-another
-def _filter_list(full_list, excludes):
-    s = set(excludes)
-    return (x for x in full_list if x not in s)
 
 def _otherPlot(G,layer,edges):
     nodes=sorted(G.nodes())
@@ -87,12 +72,16 @@ def _clusterDistance(G,C1,C2,layer):
     s1=np.sum(h1)
     if (s1>0):
         h1=h1/s1
+
+    C1=np.cumsum(h1)
     h2=C2['histogram']
     s2=np.sum(h2)
     if (s2>0):
         h2=h2/s2
-    return(euclidean(h1,h2))
-    # return(emd(h1,h2,MD))
+    C2=np.cumsum(h2)
+
+    D=np.sum(np.abs(C1-C2))/NBINS
+    return(D)
 
 
 def Union(x, y):
@@ -125,13 +114,13 @@ def Find(x):
         x['parent'] = Find(x['parent'])
         return x['parent']
 
-def _updateHist(hist,minVal,maxVal,vals):
+def _createHist(vals,minVal,maxVal):
     th,_=np.histogram(vals,bins=NBINS,range=(minVal,maxVal))
-    return(hist+th)
+    return(th)
 
-def ComputeClustering(H,layer,varname=''):
+def ComputeClustering(GH,layer,varname=''):
     print('start CC')
-    G=H.copy()
+    G=GH.copy()
 
     e2i={}
     i2e={}
@@ -142,27 +131,37 @@ def ComputeClustering(H,layer,varname=''):
         i2e[i]=e
         i+=1
 
-    S={}
+    # S={}
 
     firstNode=list(G.nodes())[0]
     minVal=G.node[firstNode][layer]
     maxVal=G.node[firstNode][layer]
     allVals=[]
     nToVisit=[]
+
+    pos={}
+    for n in G.nodes():
+        pos[n]=[G.node[n]['x'],G.node[n]['y']]
+    for e in G.edges():
+        G[e[0]][e[1]]['level']=-1
+
     for n in G.nodes():
         G.node[n]['parent']=G.node[n]
         G.node[n]['rank']=0
         G.node[n]['id']=n
         G.node[n]['members']=[n,]
-        G.node[n]['histogram']=np.zeros((NBINS,))
+        # G.node[n]['histogram']=np.zeros((NBINS,))
+
         if (G.node[n][layer] is not None):
             allVals.append(G.node[n][layer])
             nToVisit.append(n)
             minVal=min((minVal,G.node[n][layer]))
-            maxVal=max((minVal,G.node[n][layer]))
+            maxVal=max((maxVal,G.node[n][layer]))
+
+    print('Value range: {0}-{1}'.format(minVal,maxVal))
 
     for n in nToVisit:
-        G.node[n]['histogram']=_updateHist(G.node[n]['histogram'],minVal,maxVal,G.node[n][layer])
+        G.node[n]['histogram']=_createHist(G.node[n][layer],minVal,maxVal,)
         
     print('starting clustering')
     E={e2i[e]:True for e in G.edges()}
@@ -170,8 +169,8 @@ def ComputeClustering(H,layer,varname=''):
     # NG=len(G.nodes())
 
     level=0
-    roots=set([Find(G.node[x])['id'] for x in G.nodes()])
-    S[level]=[set(G.node[y]['members']) for y in roots]
+    # roots=set([Find(G.node[x])['id'] for x in G.nodes()])
+    # S[level]=[set(G.node[y]['members']) for y in roots]
 
     while (NE>0):
         print('-----------------\n\nlevel ',level)
@@ -180,7 +179,7 @@ def ComputeClustering(H,layer,varname=''):
 
         level+=1
 
-        H = []
+        H = {}
         queued = dict()
         dv=[]
         for ee in E:
@@ -196,44 +195,47 @@ def ComputeClustering(H,layer,varname=''):
                 K=(min((xid,yid)),max((xid,yid)))
                 if K not in queued:
                     queued[K]=True
+                    numel=min((len(x['members']),len(y['members'])))
                     cD=_clusterDistance(G, x, y, layer=layer)
-                    heappush(H,(cD,K,(x,y)))
+                    if (numel not in H):
+                        H[numel]=[]
+                    heappush(H[numel],(cD,K,(x,y)))
                     dv.append(cD)
         if (not dv):
             break
 
         quantileThreshold=np.percentile(dv,25)
-        MergeAtLeast=0.20*len(H)
+        # MergeAtLeast=np.max([10,0.05*len(H)])
+        print('QT {0:2.3f} (min:{1:2.3f}, max:{2:2.3f}, median:{3:2.3f}'.format(quantileThreshold,np.min(dv),np.max(dv),np.median(dv)))
 
 
         print('Weights done',len(H))
         to_merge = []
         used = {}
-        
-        while len(H)>0:
-            el=heappop(H)
-            x,y=el[2]
-            if ((el[0]>quantileThreshold) and (len(to_merge)>(MergeAtLeast))):
-                print('broke with',el[0],quantileThreshold)
-                break
-            if (x['id'] in used) or (y['id']  in used):
-                continue
-            used[x['id']]=True
-            used[y['id']]=True
-            to_merge.append((x,y))
+        el=[]
+        for numel in sorted(H.keys()):
+            while len(H[numel])>0:
+                el=heappop(H[numel])
+                x,y=el[2]
+                if (el[0]>quantileThreshold):# and (len(to_merge)>(MergeAtLeast))):
+                    # print('{0} broke with {1:3.2f}'.format(numel,el[0]))
+                    break
+                if (x['id'] in used) or (y['id']  in used):
+                    continue
+                used[x['id']]=True
+                used[y['id']]=True
+                to_merge.append((x,y))
+            # print('{0} - edges {1}'.format(numel,len(to_merge)))
 
-        print('merge selection done: {0} to do, {1} used '.format(len(to_merge),len(used)))
+        print('merge selection done: {0} clusters to merge '.format(len(used)))
 
         removedEdges=0
-        print('to_merge',len(to_merge))
         for (x,y) in to_merge:
             x=Find(x)
             y=Find(y)
             XE=set([e2i[e] for e in list(G.edges(x['members']))])
             YE=set([e2i[e] for e in list(G.edges(y['members']))])
             rE=list(XE.intersection(YE))
-            if (len(XE)==len(rE)) or (len(YE)==len(rE)):
-                print('XE {0} YE {1} rE {2}'.format(len(XE),len(YE),len(rE)))
             removedEdges+=len(rE)
             for ee in list(rE):
                 e=i2e[ee]
@@ -243,51 +245,11 @@ def ComputeClustering(H,layer,varname=''):
                     
             Union(x,y)
         print('merging done', removedEdges)
-        # roots=set([Find(G.node[x])['id'] for x in G.nodes()])
-        # # print(level,roots,len(roots),sum([len(G.node[y]['members']) for y in roots]))
-        # S[level]=[set(G.node[y]['members']) for y in roots]
 
-    # _plotGraph(G,layer)
-    
-    # T=nx.DiGraph()
-    # T.add_node((-1,-1))
-    # T.node[(-1,-1)]['len']=len(G.nodes())
-    
-    # for k in sorted(S.keys(),reverse=True):
-    #     for i in range(len(S[k])):
-    #         T.add_node((k,i))
-    #         T.node[(k,i)]['len']=len(S[k][i])
-    #         if (k+1) in S:
-    #             for j in range(len(S[k+1])):
-    #                 inter=(S[k][i]).intersection(S[k+1][j])
-    #                 if len(inter)>0:
-    #                     T.add_edge((k,i),(k+1,j))
-    #                     T[(k,i)][(k+1,j)]['inter']=len(inter)
-    #         else:
-    #             T.add_edge((k,i),(-1,-1))
-    #             T[(k,i)][(-1,-1)]['inter']=1
 
-    # # pos=graphviz_layout(T, prog='dot')
-    # # nx.draw(T,pos=pos,node_size=[T.node[n]['len']/10 for n in T.nodes()])#,width=[T[e[0]][e[1]]['inter']/10 for e in T.edges()])
-    # # plt.savefig('im_{0}.png'.format(varname),dpi=600)
-    # # plt.close()
-
-    # nx.write_gpickle(T,'gr_{0}.gp'.format(varname))
-
-    #     plt.figure()
-    #     plt.hist(S[k],20)
-    # plt.show()
+        roots=set([Find(G.node[x])['id'] for x in G.nodes()])
+        print('level {0} #clusters {1}'.format(level,len(roots)))#,sum([len(G.node[y]['members']) for y in roots]))
+        # plt.figure()
+        # plt.hist([len(G.node[y]['members']) for y in roots])
+        # plt.show()
     return(G)
-
-if __name__=="__main__":
-    h=np.zeros((NBINS,))
-    print(h)
-    h=_updateHist(h,0,1,[0,1])
-    print(h)
-    print('\n')
-    for i in range(NBINS):
-        print('\n')
-        print(h)
-        v=i/NBINS
-        h=_updateHist(h,0,1,v)
-        print(v,h)

@@ -162,7 +162,7 @@ def _createHier(VarID):
         ind2ID={}
         G=nx.Graph()
         ind=0
-        plt.figure()
+        # plt.figure()
         for row in cur:
             n=row[0]
             G.add_node(n)
@@ -203,19 +203,20 @@ def _createHier(VarID):
         print('assigning values',cacheName)
         G=nx.read_gpickle(cacheName)
 
-    pos={}
-    for n in G:
-        pos[n]=[G.node[n]['x'],G.node[n]['y']]
-    for H in nx.connected_component_subgraphs(G):
-        if (len(list(H.nodes()))>10):
-            nx.draw(H,pos=pos,node_size=2,node_color='green')
-        else:
-            nx.draw(H,pos=pos,node_size=10,node_color='red')
-    plt.show()
-    exit()
+    # pos={}
+    # for n in G:
+    #     pos[n]=[G.node[n]['x'],G.node[n]['y']]
+    # for H in nx.connected_component_subgraphs(G):
+    #     if (len(list(H.nodes()))>10):
+    #         nx.draw(H,pos=pos,node_size=2,node_color='green')
+    #     else:
+    #         nx.draw(H,pos=pos,node_size=10,node_color='red')
+    # plt.show()
+    # exit()
 
 
     cur.execute(sql.SQL("SELECT normVal, FormID FROM Variables WHERE (VarID=%s);"),[VarID,])
+    print('assigning values nodes:{0}, vals:{1}'.format(len(G.nodes),cur.rowcount))
     for row in cur:
         G.node[row[1]]['val']=row[0]
 
