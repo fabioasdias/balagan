@@ -162,19 +162,26 @@ def _createHier(VarID):
         ind2ID={}
         G=nx.Graph()
         ind=0
+        plt.figure()
         for row in cur:
             n=row[0]
             G.add_node(n)
             G.node[n]['x']=row[1]
             G.node[n]['y']=row[2]
-            for pol in _makeListPols(wkb.loads(row[3], hex=True)):            
+            geom=wkb.loads(row[3], hex=True)
+            for pol in _makeListPols(geom):            
                 # plotPol(pol)
-                x,y=pol.exterior.coords.xy
-                curPoints=fixDensity(np.array(list(zip(x,y))))
-                points.extend(curPoints)
-                for _ in range(curPoints.shape[0]):
-                    ind2ID[ind]=n        
-                    ind=ind+1
+                p=pol.representative_point()
+                points.append([p.x,p.y])
+                ind2ID[ind]=n
+                ind+=1
+
+                # x,y=pol.exterior.coords.xy
+                # curPoints=fixDensity(np.array(list(zip(x,y))))
+                # points.extend(curPoints)
+                # for _ in range(curPoints.shape[0]):
+                #     ind2ID[ind]=n        
+                #     ind=ind+1
         points=np.array(points)
 
         border=findBorder(points)
@@ -186,12 +193,15 @@ def _createHier(VarID):
         print('done Voronoi')
         for e in D.ridge_points:
             if (e[0]<maxValid) and (e[1]<maxValid):
-                G.add_edge(ind2ID[e[0]],ind2ID[e[1]])
+                n0=ind2ID[e[0]]
+                n1=ind2ID[e[1]]
+                if (n0!=n1):
+                    G.add_edge(n0,n1)
         print('number of connected components ',nx.number_connected_components(G))
         nx.write_gpickle(G,cacheName)
-    
-    print('assigning values',cacheName)
-    G=nx.read_gpickle(cacheName)
+    else:
+        print('assigning values',cacheName)
+        G=nx.read_gpickle(cacheName)
 
     pos={}
     for n in G:
