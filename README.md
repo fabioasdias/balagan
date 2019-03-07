@@ -1,4 +1,4 @@
-# balagan
+# Balagan
 
 During the development of Piccard (https://github.com/fabioasdias/piccard), one of the issues raised by a stakeholder was the option to upload new data, possibly with a new geometry.
 
